@@ -648,13 +648,15 @@ namespace rstan {
      * @param qoi_idx: the indexes for all parameters of interest.
      * @param fnames_oi: the parameter names of interest.
      * @param base_rng: the boost RNG instance.
+     * @param verbosity: the output verbosity, 0 = no output
      */
     template <class Model, class RNG_t>
     int sampler_command(stan_args& args, Model& model, Rcpp::List& holder,
                         const std::vector<size_t>& qoi_idx,
-                        const std::vector<std::string>& fnames_oi, RNG_t& base_rng) {
+                        const std::vector<std::string>& fnames_oi, RNG_t& base_rng,
+                        size_t verbosity ) {
       std::stringstream ss;
-      
+
       base_rng.seed(args.get_random_seed());
       // (2**50 = 1T samples, 1000 chains)
       static boost::uintmax_t DISCARD_STRIDE =
@@ -704,14 +706,14 @@ namespace rstan {
       model.write_array(base_rng,cont_vector,disc_vector,initv);
 
       if (TEST_GRADIENT == args.get_method()) {
-        rstan::io::rcout << std::endl << "TEST GRADIENT MODE" << std::endl;       
+        if (verbosity > 0) rstan::io::rcout << std::endl << "TEST GRADIENT MODE" << std::endl;
         double epsilon = args.get_ctrl_test_grad_epsilon();
         double error = args.get_ctrl_test_grad_error();
         ss.str("");
         int num_failed =
           stan::model::test_gradients<true,true>(model,cont_vector,disc_vector,
                                                  epsilon,error,ss,&rstan::io::rcout);
-        rstan::io::rcout << ss.str() << std::endl;
+        if (verbosity > 0) rstan::io::rcout << ss.str() << std::endl;
         holder = Rcpp::List::create(Rcpp::_["num_failed"] = num_failed);
         holder.attr("test_grad") = Rcpp::wrap(true);
         holder.attr("inits") = initv;
@@ -762,6 +764,7 @@ namespace rstan {
         double deltaT
           = static_cast<double>(end_check - start_check) / CLOCKS_PER_SEC;
 
+        if (verbosity > 0) {
         rstan::io::rcout << std::endl;
         rstan::io::rcout << "This is Automatic Differentiation Variational Inference.";
         rstan::io::rcout << std::endl;
@@ -779,6 +782,7 @@ namespace rstan {
         rstan::io::rcout << "Adjust your expectations accordingly!";
         rstan::io::rcout << std::endl;
         rstan::io::rcout << std::endl;
+        }
 
         if (args.get_ctrl_variational_algorithm() == FULLRANK) {
           if (args.get_sample_file_flag()) {
@@ -836,19 +840,21 @@ namespace rstan {
 
       if (OPTIM == args.get_method()) { // point estimation
         if (LBFGS == args.get_ctrl_optim_algorithm()) {
-          rstan::io::rcout << "STAN OPTIMIZATION COMMAND (LBFGS)" << std::endl;
-          rstan::io::rcout << "init = " << init_val << std::endl;
-          if (args.get_sample_file_flag())
-            rstan::io::rcout << "output = " << args.get_sample_file() << std::endl;
-          rstan::io::rcout << "save_iterations = " << args.get_ctrl_optim_save_iterations() << std::endl;
-          rstan::io::rcout << "init_alpha = " << args.get_ctrl_optim_init_alpha() << std::endl;
-          rstan::io::rcout << "tol_obj = " << args.get_ctrl_optim_tol_obj() << std::endl;
-          rstan::io::rcout << "tol_grad = " << args.get_ctrl_optim_tol_grad() << std::endl;
-          rstan::io::rcout << "tol_param = " << args.get_ctrl_optim_tol_param() << std::endl;
-          rstan::io::rcout << "tol_rel_obj = " << args.get_ctrl_optim_tol_rel_obj() << std::endl;
-          rstan::io::rcout << "tol_rel_grad = " << args.get_ctrl_optim_tol_rel_grad() << std::endl;
-          rstan::io::rcout << "history_size = " << args.get_ctrl_optim_history_size() << std::endl;
-          rstan::io::rcout << "seed = " << args.get_random_seed() << std::endl;
+          if (verbosity > 0) rstan::io::rcout << "STAN OPTIMIZATION COMMAND (LBFGS)" << std::endl;
+          if (verbosity > 1) {
+              rstan::io::rcout << "init = " << init_val << std::endl;
+            if (args.get_sample_file_flag())
+                rstan::io::rcout << "output = " << args.get_sample_file() << std::endl;
+            rstan::io::rcout << "save_iterations = " << args.get_ctrl_optim_save_iterations() << std::endl;
+            rstan::io::rcout << "init_alpha = " << args.get_ctrl_optim_init_alpha() << std::endl;
+            rstan::io::rcout << "tol_obj = " << args.get_ctrl_optim_tol_obj() << std::endl;
+            rstan::io::rcout << "tol_grad = " << args.get_ctrl_optim_tol_grad() << std::endl;
+            rstan::io::rcout << "tol_param = " << args.get_ctrl_optim_tol_param() << std::endl;
+            rstan::io::rcout << "tol_rel_obj = " << args.get_ctrl_optim_tol_rel_obj() << std::endl;
+            rstan::io::rcout << "tol_rel_grad = " << args.get_ctrl_optim_tol_rel_grad() << std::endl;
+            rstan::io::rcout << "history_size = " << args.get_ctrl_optim_history_size() << std::endl;
+            rstan::io::rcout << "seed = " << args.get_random_seed() << std::endl;
+          }
 
           if (args.get_sample_file_flag()) {
             write_comment(sample_stream,"Point Estimate Generated by Stan (LBFGS)");
@@ -893,7 +899,7 @@ namespace rstan {
 
           stan::services::optimize::do_bfgs_optimize(model, lbfgs, base_rng,
                                                      lp, cont_vector, disc_vector,
-                                                     &sample_stream, &rstan::io::rcout,
+                                                     &sample_stream, verbosity > 1 ? &rstan::io::rcout : NULL,
                                                      save_iterations, refresh, interruptCallback);
 
           if (args.get_sample_file_flag()) {
@@ -906,18 +912,20 @@ namespace rstan {
           holder = Rcpp::List::create(Rcpp::_["par"] = params_inr_etc,
                                       Rcpp::_["value"] = lp);
         } else if (BFGS == args.get_ctrl_optim_algorithm()) {
-          rstan::io::rcout << "STAN OPTIMIZATION COMMAND (BFGS)" << std::endl;
-          rstan::io::rcout << "init = " << init_val << std::endl;
-          if (args.get_sample_file_flag())
-            rstan::io::rcout << "output = " << args.get_sample_file() << std::endl;
-          rstan::io::rcout << "save_iterations = " << args.get_ctrl_optim_save_iterations() << std::endl;
-          rstan::io::rcout << "init_alpha = " << args.get_ctrl_optim_init_alpha() << std::endl;
-          rstan::io::rcout << "tol_obj = " << args.get_ctrl_optim_tol_obj() << std::endl;
-          rstan::io::rcout << "tol_grad = " << args.get_ctrl_optim_tol_grad() << std::endl;
-          rstan::io::rcout << "tol_param = " << args.get_ctrl_optim_tol_param() << std::endl;
-          rstan::io::rcout << "tol_rel_obj = " << args.get_ctrl_optim_tol_rel_obj() << std::endl;
-          rstan::io::rcout << "tol_rel_grad = " << args.get_ctrl_optim_tol_rel_grad() << std::endl;
-          rstan::io::rcout << "seed = " << args.get_random_seed() << std::endl;
+          if (verbosity > 0) rstan::io::rcout << "STAN OPTIMIZATION COMMAND (BFGS)" << std::endl;
+          if (verbosity > 1) {
+            rstan::io::rcout << "init = " << init_val << std::endl;
+            if (args.get_sample_file_flag())
+                rstan::io::rcout << "output = " << args.get_sample_file() << std::endl;
+            rstan::io::rcout << "save_iterations = " << args.get_ctrl_optim_save_iterations() << std::endl;
+            rstan::io::rcout << "init_alpha = " << args.get_ctrl_optim_init_alpha() << std::endl;
+            rstan::io::rcout << "tol_obj = " << args.get_ctrl_optim_tol_obj() << std::endl;
+            rstan::io::rcout << "tol_grad = " << args.get_ctrl_optim_tol_grad() << std::endl;
+            rstan::io::rcout << "tol_param = " << args.get_ctrl_optim_tol_param() << std::endl;
+            rstan::io::rcout << "tol_rel_obj = " << args.get_ctrl_optim_tol_rel_obj() << std::endl;
+            rstan::io::rcout << "tol_rel_grad = " << args.get_ctrl_optim_tol_rel_grad() << std::endl;
+            rstan::io::rcout << "seed = " << args.get_random_seed() << std::endl;
+          }
 
           if (args.get_sample_file_flag()) {
             write_comment(sample_stream,"Point Estimate Generated by Stan (BFGS)");
@@ -958,7 +966,7 @@ namespace rstan {
 
           stan::services::optimize::do_bfgs_optimize(model, bfgs, base_rng,
                                                      lp, cont_vector, disc_vector,
-                                                     &sample_stream, &rstan::io::rcout,
+                                                     &sample_stream, verbosity > 1 ? &rstan::io::rcout : NULL,
                                                      save_iterations, refresh, interruptCallback);
 
           if (args.get_sample_file_flag()) {
@@ -971,7 +979,7 @@ namespace rstan {
           holder = Rcpp::List::create(Rcpp::_["par"] = params_inr_etc,
                                       Rcpp::_["value"] = lp);
         } else if (Newton == args.get_ctrl_optim_algorithm()) {
-          rstan::io::rcout << "STAN OPTIMIZATION COMMAND (Newton)" << std::endl;
+          if (verbosity > 0) rstan::io::rcout << "STAN OPTIMIZATION COMMAND (Newton)" << std::endl;
           if (args.get_sample_file_flag()) {
             write_comment(sample_stream,"Point Estimate Generated by Stan (Newton)");
             write_comment(sample_stream);
@@ -991,19 +999,21 @@ namespace rstan {
           double lp = stan::model::log_prob_grad<true,true>(model, cont_vector, disc_vector, gradient);
 
           double lastlp = lp - 1;
-          rstan::io::rcout << "initial log joint probability = " << lp << std::endl;
+          if (verbosity > 1) rstan::io::rcout << "initial log joint probability = " << lp << std::endl;
           int m = 0;
           while ((lp - lastlp) / fabs(lp) > 1e-8) {
             R_CheckUserInterrupt();
             lastlp = lp;
             lp = stan::optimization::newton_step(model, cont_vector, disc_vector);
-            if (args.get_ctrl_optim_refresh() > 0) {
-                rstan::io::rcout << "Iteration ";
-                rstan::io::rcout << std::setw(2) << (m + 1) << ". ";
-                rstan::io::rcout << "Log joint probability = " << std::setw(10) << lp;
-                rstan::io::rcout << ". Improved by " << (lp - lastlp) << ".";
-                rstan::io::rcout << std::endl;
-                rstan::io::rcout.flush();
+            if (verbosity > 1) {
+                if (args.get_ctrl_optim_refresh() > 0) {
+                    rstan::io::rcout << "Iteration ";
+                    rstan::io::rcout << std::setw(2) << (m + 1) << ". ";
+                    rstan::io::rcout << "Log joint probability = " << std::setw(10) << lp;
+                    rstan::io::rcout << ". Improved by " << (lp - lastlp) << ".";
+                    rstan::io::rcout << std::endl;
+                    rstan::io::rcout.flush();
+                }
             }
             m++;
             if (args.get_sample_file_flag()) {
@@ -1059,7 +1069,7 @@ namespace rstan {
       if (algorithm == Fixed_param) {
         stan::mcmc::fixed_param_sampler sampler(&rstan::io::rcout, &rstan::io::rcerr);
         if (args.get_ctrl_sampling_warmup() != 0) {
-          rstan::io::rcout << "Warning: warmup will be skipped for the fixed parameter sampler!" << std::endl;
+          if (verbosity > 0) rstan::io::rcout << "Warning: warmup will be skipped for the fixed parameter sampler!" << std::endl;
           args.set_ctrl_sampling_warmup(0);
         }
         execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
@@ -1076,6 +1086,8 @@ namespace rstan {
       }
 
       int sampler_select = engine_index + 10 * metric_index;
+      std::ostream* sampler_log = verbosity > 1 ? &rstan::io::rcout : NULL;
+      std::ostream* sampler_err = verbosity > 0 ? &rstan::io::rcerr : NULL;
       if (args.get_ctrl_sampling_adapt_engaged())  sampler_select += 100;
       switch (sampler_select) {
         case 0: {
@@ -1089,7 +1101,7 @@ namespace rstan {
         }
         case 1: {
           typedef stan::mcmc::unit_e_nuts<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_nuts<sampler_t>(&sampler, args);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
                            sample_stream, diagnostic_stream, fnames_oi,
@@ -1098,7 +1110,7 @@ namespace rstan {
         }
         case 10: {
           typedef stan::mcmc::diag_e_static_hmc<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_static_hmc<sampler_t>(&sampler, args);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
                            sample_stream, diagnostic_stream, fnames_oi,
@@ -1107,7 +1119,7 @@ namespace rstan {
         }
         case 11: {
           typedef stan::mcmc::diag_e_nuts<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_nuts<sampler_t>(&sampler, args);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
                            sample_stream, diagnostic_stream, fnames_oi,
@@ -1116,7 +1128,7 @@ namespace rstan {
         }
         case 20: {
           typedef stan::mcmc::dense_e_static_hmc<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_static_hmc<sampler_t>(&sampler, args);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
                            sample_stream, diagnostic_stream, fnames_oi,
@@ -1125,7 +1137,7 @@ namespace rstan {
         }
         case 21: {
           typedef stan::mcmc::dense_e_nuts<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_nuts<sampler_t>(&sampler, args);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
                            sample_stream, diagnostic_stream, fnames_oi,
@@ -1134,7 +1146,7 @@ namespace rstan {
         }
         case 100: {
           typedef stan::mcmc::adapt_unit_e_static_hmc<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_static_hmc<sampler_t>(&sampler, args);
           init_adapt<sampler_t>(&sampler, args, cont_params);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
@@ -1144,7 +1156,7 @@ namespace rstan {
         }
         case 101: {
           typedef stan::mcmc::adapt_unit_e_nuts<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_nuts<sampler_t>(&sampler, args);
           init_adapt<sampler_t>(&sampler, args, cont_params);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
@@ -1154,7 +1166,7 @@ namespace rstan {
         }
         case 110: {
           typedef stan::mcmc::adapt_diag_e_static_hmc<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_static_hmc<sampler_t>(&sampler, args);
           init_windowed_adapt<sampler_t>(&sampler, args, cont_params);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
@@ -1164,7 +1176,7 @@ namespace rstan {
         }
         case 111: {
           typedef stan::mcmc::adapt_diag_e_nuts<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_nuts<sampler_t>(&sampler, args);
           init_windowed_adapt<sampler_t>(&sampler, args, cont_params);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
@@ -1174,7 +1186,7 @@ namespace rstan {
         }
         case 120: {
           typedef stan::mcmc::adapt_dense_e_static_hmc<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_static_hmc<sampler_t>(&sampler, args);
           init_windowed_adapt<sampler_t>(&sampler, args, cont_params);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
@@ -1184,7 +1196,7 @@ namespace rstan {
         }
         case 121: {
           typedef stan::mcmc::adapt_dense_e_nuts<Model, RNG_t> sampler_t;
-          sampler_t sampler(model, base_rng, &rstan::io::rcout, &rstan::io::rcerr);
+          sampler_t sampler(model, base_rng, sampler_log, sampler_err);
           init_nuts<sampler_t>(&sampler, args);
           init_windowed_adapt<sampler_t>(&sampler, args, cont_params);
           execute_sampling(args, model, holder, &sampler, s, qoi_idx, initv,
@@ -1472,7 +1484,7 @@ namespace rstan {
 
       int ret;
       ret = sampler_command(args, model_, holder, names_oi_tidx_,
-                            fnames_oi_, base_rng);
+                            fnames_oi_, base_rng, Rcpp::as<size_t>( lst_args["verbosity"] ) );
       if (ret != 0) {
         return R_NilValue;  // indicating error happened
       }
