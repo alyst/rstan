@@ -67,10 +67,12 @@ init_rstan_opt_env <- function(e) {
 #   boost_lib_path <- file.path(stan_lib_path, boost_dir)
   boost_lib_path <- system.file('include', package = 'BH')
   eigen_lib_path <- system.file('include', package = 'RcppEigen')
+  cvodes_lib_path <- system.file('include/cvodes', package = 'StanHeaders')
 #   eigen_dir <- dir(stan_lib_path, pattern = 'eigen.*')
 #   eigen_lib_path <- file.path(stan_lib_path, eigen_dir)
   assign("eigen_lib", eigen_lib_path, e) 
   assign("boost_lib", boost_lib_path, e) 
+  assign("cvodes_lib", cvodes_lib_path, e)
 
   ya_boost  <- system.file('include', 'boost_not_in_BH', package = 'rstan')
   assign('boost_lib2', ya_boost, e)

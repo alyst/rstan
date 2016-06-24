@@ -37,12 +37,17 @@ boost_path_fun2 <- function() {
   rstan_options("boost_lib2")
 }
 
+cvodes_path_fun <- function() {
+  rstan_options("cvodes_lib")
+}
+
 PKG_CPPFLAGS_env_fun <- function() {
    paste(' -I"', file.path(inc_path_fun("Rcpp"), '" '),
          ' -I"', file.path(eigen_path_fun(), '" '),
          ' -I"', file.path(eigen_path_fun(), 'unsupported" '),
          ' -I"', boost_path_fun2(), '"', # boost_not_in_BH should come 
          ' -I"', boost_path_fun(), '"',  # before BH/include
+         ' -I"', file.path(cvodes_path_fun(), ""), '"',
          ' -I"', file.path(inc_path_fun("StanHeaders"), "src", '" '),
          ' -I"', file.path(inc_path_fun("StanHeaders"), '" '),
          ' -I"', inc_path_fun("rstan"), '"', 
